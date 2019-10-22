@@ -1,4 +1,4 @@
-import { Lifecycle, ServerRoute, Util } from '@hapi/hapi';
+import { Lifecycle, ServerRoute, Util, Server } from '@hapi/hapi';
 
 const path = Symbol('path');
 const routes = Symbol('routes');
@@ -62,14 +62,27 @@ export const Patch = (path?: string): MethodDecorator => createAction(path, "PAT
 export const Options = (path?: string): MethodDecorator => createAction(path, "OPTIONS");
 export const All = (path?: string): MethodDecorator => createAction(path);
 
-export function registerController(ControllerClass: Class): ServerRoute[] {
+export async function registerController(server: Server, ControllerClass: Class | Class[]): Promise<void> {
 
-    const instance = new ControllerClass() as ControllerType;
+    const classes = Array.isArray(ControllerClass) ? ControllerClass : [ControllerClass];
 
-    const controllerPath = instance[path];
+    for (const contollerClass of classes) {
+        const instance = new contollerClass() as ControllerType;
 
-    return [...instance[routes].values()].map(r => ({
-        ...r,
-        path: `${controllerPath}${r.path}`
-    }))
+        const controllerPath = instance[path];
+
+        const serverRoutes: ServerRoute[] = [...instance[routes].values()].map(r => ({
+            ...r,
+            path: `${controllerPath}${r.path}`
+        }))
+
+        await server.register({
+            plugin: {
+                name: instance.constructor.name,
+                register: async (server): Promise<void> => {
+                    server.route(serverRoutes);
+                }
+            }
+        })
+    }
 }
