@@ -1,4 +1,5 @@
 import { Lifecycle, ServerRoute, Util, Server } from '@hapi/hapi';
+import Joi from '@hapi/joi';
 
 const path = Symbol('path');
 const routes = Symbol('routes');
@@ -36,7 +37,15 @@ function createAction(path: string | undefined, method?: Util.HTTP_METHODS_PARTI
             serverRoute = {
                 handler: descriptor.value,
                 method: [],
-                path: '/',
+                path: '/{id}',
+                options: {
+                    tags: ['api'],
+                    validate: {
+                        params: Joi.object({
+                            id: Joi.number().required().description('sdfsdfs')
+                        })
+                    }
+                }
             };
 
             controller[routes].set(name, serverRoute);

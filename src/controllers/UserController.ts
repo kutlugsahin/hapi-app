@@ -4,7 +4,7 @@ import { Controller, Get, All } from '../decorators';
 @Controller('/user')
 export class UserController {
 
-    @All('/{id}')
+    @Get('/{id}')
     public users(request: Request): Lifecycle.ReturnValue {
         return {
             id: request.params.id,
