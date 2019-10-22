@@ -81,8 +81,8 @@ export async function registerController(server: Server, ControllerClass: Class 
                 name: instance.constructor.name,
                 register: async (server): Promise<void> => {
                     server.route(serverRoutes);
-                }
-            }
+                },
+            },
         })
     }
 }
