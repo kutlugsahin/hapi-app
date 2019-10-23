@@ -1,15 +1,28 @@
-import { Lifecycle, ServerRoute, Util, Server } from '@hapi/hapi';
+import { Lifecycle, ServerRoute, Util, Server, RouteOptionsValidate, RouteOptions, ValidationObject } from '@hapi/hapi';
 import Joi from '@hapi/joi';
+import { tags } from 'joi';
 
 const path = Symbol('path');
-const routes = Symbol('routes');
+const methodInfoMap = Symbol('methodInfoMap');
 
 type MethodDecorator = (target: Object, name: string, descriptor: TypedPropertyDescriptor<Lifecycle.Method>) => void;
 
 type Class = { new(): object };
 
+interface RouteInfo {
+    path?: string;
+    method: Util.HTTP_METHODS | '*';
+}
+
+interface MethodInfo {
+    name: string;
+    routes: RouteInfo[];
+    validation?: RouteOptionsValidate;
+    method: Lifecycle.Method;
+}
+
 interface ControllerType extends Object{
-    [routes]: Map<string, ServerRoute>;
+    [methodInfoMap]: Map<string, MethodInfo>;
     [path]: string;
 }
 
@@ -23,43 +36,38 @@ export function Controller(controllerPath: string) {
     };
 }
 
-function createAction(path: string | undefined, method?: Util.HTTP_METHODS_PARTIAL | Util.HTTP_METHODS_PARTIAL[]): MethodDecorator {
+function getMethodInfo(target: object, name: string, method: Lifecycle.Method): MethodInfo {
+    const controller = target as ControllerType;
+
+    if (!controller[methodInfoMap]) {
+        controller[methodInfoMap] = new Map();
+    }
+
+    if (!controller[methodInfoMap].has(name)) {
+        controller[methodInfoMap].set(name, {
+            name,
+            routes: [],
+            method,
+        });
+    }
+
+    return controller[methodInfoMap].get(name)!;
+}
+
+export function Validate(validationObject: RouteOptionsValidate): MethodDecorator {
     return (target, name, descriptor): void => {
-        const controller = target as ControllerType;
+        const methodInfo = getMethodInfo(target, name, descriptor.value!);
+        methodInfo.validation = validationObject;
+    }
+}
 
-        if (!controller[routes]) {
-            controller[routes] = new Map();
-        }
-
-        let serverRoute = controller[routes].get(name);
-
-        if (!serverRoute) {
-            serverRoute = {
-                handler: descriptor.value,
-                method: [],
-                path: '/{id}',
-                options: {
-                    tags: ['api'],
-                    validate: {
-                        params: Joi.object({
-                            id: Joi.number().required().description('sdfsdfs')
-                        })
-                    }
-                }
-            };
-
-            controller[routes].set(name, serverRoute);
-        }
-
-        if (path) {
-            serverRoute.path = path;
-        }
-
-        if (method) {
-            serverRoute.method = Array.isArray(method) ? [...serverRoute.method, ...method] : [...serverRoute.method, method];
-        } else {
-            serverRoute.method = '*';
-        }
+function createAction(path: string | undefined, method?: Util.HTTP_METHODS): MethodDecorator {
+    return (target, name, descriptor): void => {
+        const methodInfo = getMethodInfo(target, name, descriptor.value!);
+        methodInfo.routes.push({
+            path,
+            method: method || '*',
+        })
     };
 }
 
@@ -80,10 +88,28 @@ export async function registerController(server: Server, ControllerClass: Class 
 
         const controllerPath = instance[path];
 
-        const serverRoutes: ServerRoute[] = [...instance[routes].values()].map(r => ({
-            ...r,
-            path: `${controllerPath}${r.path}`
-        }))
+        const serverRoutes: ServerRoute[] = [...instance[methodInfoMap].values()].map((methodInfo: MethodInfo): ServerRoute => {
+            const paths = methodInfo.routes.filter(p => p.path);
+            if (methodInfo.routes.filter(p => p.path).length !== 1) {
+                console.warn(`define only one route path for a method: ${contollerClass.prototype.name} ${methodInfo.name}`);
+            }
+
+            const path = controllerPath + paths[0].path!;
+                        
+            return {
+                path,
+                method: methodInfo.routes.map(r => r.method || '*'),
+                options: {
+                    handler: methodInfo.method,
+                    validate: methodInfo.validation,
+                    tags: ['api'],
+                    response: {
+                        
+                    }
+                },
+
+            }
+        });
 
         await server.register({
             plugin: {
